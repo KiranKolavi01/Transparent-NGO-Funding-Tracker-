@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import datetime
+import requests
 
 # --- PAGE CONFIG ---
 st.set_page_config(
@@ -10,52 +11,67 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# --- MOCK DATA SETUP ---
-# In a real application, these will be replaced with API calls to the FastAPI backend.
-if 'donors' not in st.session_state:
-    st.session_state.donors = []
-
-if 'donations' not in st.session_state:
-    st.session_state.donations = [
-        {"donor_name": "Alice Smith", "project": "Clean Water Initiative", "amount": 500, "date": "2026-03-01"},
-        {"donor_name": "Bob Jones", "project": "Education for All", "amount": 1500, "date": "2026-03-05"},
-        {"donor_name": "Charlie Brown", "project": "Health Clinics Setup", "amount": 300, "date": "2026-03-10"},
-        {"donor_name": "Diana Prince", "project": "Clean Water Initiative", "amount": 750, "date": "2026-03-12"},
-        {"donor_name": "Evan Wright", "project": "Reforestation Project", "amount": 200, "date": "2026-03-15"},
-    ]
-
-if 'project_stats' not in st.session_state:
-    # Mock allocation/expenses for the dashboard
-    st.session_state.project_stats = {
-        "budget_allocation": {
-            "Infrastructure": 4500,
-            "Supplies": 2300,
-            "Logistics": 1200,
-            "Operations": 1000,
-            "Marketing": 500
-        },
-        "total_spent": 5800,
-        "target_goal": 15000
-    }
-
 projects_list = ["Clean Water Initiative", "Education for All", "Health Clinics Setup", "Reforestation Project"]
 
-# --- HELPER FUNCTIONS FOR FUTURE API INTEGRATION ---
-# Replace these with actual requests.get() or requests.post() once backend is ready
+# --- HELPER FUNCTIONS FOR API INTEGRATION ---
+BASE_URL = "http://127.0.0.1:8000"
+
 def api_register_donor(name, email):
-    # Mocking a POST /register
-    st.session_state.donors.append({"name": name, "email": email})
-    return True
+    try:
+        response = requests.post(f"{BASE_URL}/api/register", json={"name": name, "email": email})
+        return response.ok
+    except Exception:
+        return False
 
 def api_make_donation(donor_name, project_name, amount):
-    # Mocking a POST /donate
-    st.session_state.donations.append({
-        "donor_name": donor_name,
-        "project": project_name,
-        "amount": amount,
-        "date": datetime.date.today().strftime("%Y-%m-%d")
-    })
-    return True
+    try:
+        response = requests.post(f"{BASE_URL}/api/donate", json={
+            "donor_name": donor_name,
+            "project": project_name,
+            "amount": amount
+        })
+        return response.status_code == 200
+    except Exception:
+        return False
+
+def get_donations():
+    try:
+        response = requests.get(f"{BASE_URL}/api/donations")
+        if response.ok:
+            data = response.json()
+            if isinstance(data, list):
+                return data
+            elif isinstance(data, dict):
+                return data.get("donations", [])
+    except Exception:
+        pass
+    return []
+
+def get_dashboard_stats():
+    try:
+        response = requests.get(f"{BASE_URL}/api/dashboard-stats")
+        if response.ok:
+            data = response.json()
+            if isinstance(data, dict):
+                if "project_stats" in data:
+                    return data.get("project_stats", {})
+                return data
+    except Exception:
+        pass
+    return {}
+
+def get_donors():
+    try:
+        response = requests.get(f"{BASE_URL}/api/donors")
+        if response.ok:
+            data = response.json()
+            if isinstance(data, list):
+                return data
+            elif isinstance(data, dict):
+                return data.get("donors", [])
+    except Exception:
+        pass
+    return []
 
 # --- PAGE FUNCTIONS ---
 
@@ -65,8 +81,11 @@ def dashboard_page():
     st.divider()
 
     # Calculate metrics
-    total_donations = sum(d["amount"] for d in st.session_state.donations)
-    total_spent = st.session_state.project_stats["total_spent"]
+    donations_data = get_donations()
+    project_stats = get_dashboard_stats()
+    
+    total_donations = sum(d.get("amount", 0) for d in donations_data) if donations_data else 0
+    total_spent = project_stats.get("total_spent", 0) if project_stats else 0
     remaining_balance = total_donations - total_spent
 
     # KPI Metrics
@@ -88,7 +107,7 @@ def dashboard_page():
     with chart_col1:
         st.subheader("Budget Allocation per Category")
         # Prepare data for Bar chart (spending per category)
-        allocation_data = st.session_state.project_stats["budget_allocation"]
+        allocation_data = project_stats.get("budget_allocation", {})
         df_allocation = pd.DataFrame({
             "Category": list(allocation_data.keys()),
             "Amount": list(allocation_data.values())
@@ -99,7 +118,7 @@ def dashboard_page():
     with chart_col2:
         st.subheader("Donations per Project (Breakdown)")
         # Prepare data for pie chart
-        df_donations = pd.DataFrame(st.session_state.donations)
+        df_donations = pd.DataFrame(donations_data)
         if not df_donations.empty:
             project_totals = df_donations.groupby("project")["amount"].sum().reset_index()
             # Streamlit doesn't have a native pie chart, but we can simulate a breakdown or use altair/plotly
@@ -180,7 +199,9 @@ def transactions_page():
     st.markdown("View the complete history of all donations and funding allocations across the platform. This data is fully open for audit.")
     
     st.subheader("Recent Transactions")
-    df = pd.DataFrame(st.session_state.donations)
+    live_donations = get_donations()
+    print(f"DEBUG: Fetched {len(live_donations)} donations from API")
+    df = pd.DataFrame(live_donations)
     
     if not df.empty:
         # Reorder and format dataframe for nicer display
@@ -218,7 +239,7 @@ def main():
     
     st.sidebar.markdown("---")
     st.sidebar.caption("System Status: **Online**")
-    st.sidebar.caption("Backend API: *Mock Data Mode*")
+    st.sidebar.caption("Backend API: *Active*")
     
     # Route to selected page
     if page == "Dashboard":
