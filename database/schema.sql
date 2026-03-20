@@ -1,0 +1,15 @@
+-- NGO Database Schema
+
+CREATE TABLE IF NOT EXISTS donors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS donations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    donor_name TEXT NOT NULL,
+    project TEXT NOT NULL,
+    amount REAL NOT NULL,
+    date TEXT NOT NULL
+);
